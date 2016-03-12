@@ -1,5 +1,9 @@
 var SPLASH_DELAY_SECONDS = 2.0;
 
+if ( ! scene_mod_list.start ) {
+    scene_mod_list.start = [];
+}
+
 $(document).ready(function () {
     engine.call('game.debug.menuDocumentReady');
 
@@ -1824,6 +1828,11 @@ $(document).ready(function () {
         closeOnEscape: false,
         buttons: CmdButtons
     });
+
+// try a remote load of community mods and if that fails try the download cache for offline use
+    if (!loadScript( 'https://dfpsrd4q7p23m.cloudfront.net/community-mods/start.js')) {
+        loadScript( 'coui://download/community-mods-start.js');
+    }
 
     // inject per scene mods
     if (scene_mod_list['start'])
