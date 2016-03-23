@@ -3609,6 +3609,9 @@ $(document).ready(function () {
                     break;
 
                 case 'game_over':
+                    if (msg.data.control) {
+                        handlers.control_state(msg.data.control);
+                    }
                     model.showLanding(false);
                     model.showTimeControls(false);
                     model.mode('game_over');
