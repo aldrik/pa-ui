@@ -23,7 +23,12 @@ requireGW([
 ) {
     p = PopUp;
     var exitGame = function() {
-        window.location.href = 'coui://ui/main/game/start/start.html';
+        model.transitPrimaryMessage(loc('!LOC:Returning to Main Menu'));
+        model.transitSecondaryMessage('');
+        model.transitDestination('coui://ui/main/game/start/start.html');
+        model.transitDelay(0);
+        window.location.href = 'coui://ui/main/game/transit/transit.html';
+        return; /* window.location.href will not stop execution. */
     };
 
     // Convenience function for setting up easeljs bitmaps
@@ -808,7 +813,7 @@ requireGW([
         self.useLocalServer = ko.observable().extend({ session: 'use_local_server' });
 
         // Local join configuration info
-        self.isLocalGame = ko.observable().extend({ session: 'isLocalGame' });
+        self.isLocalGame = ko.observable().extend({ session: 'is_local_game' });
         self.gameHostname = ko.observable().extend({ session: 'gameHostname' });
         self.gamePort = ko.observable().extend({ session: 'gamePort' });
 
@@ -818,6 +823,14 @@ requireGW([
         self.transitSecondaryMessage = ko.observable().extend({ session: 'transit_secondary_message' });
         self.transitDestination = ko.observable().extend({ session: 'transit_destination' });
         self.transitDelay = ko.observable().extend({ session: 'transit_delay' });
+
+        self.gameType = ko.observable().extend({ session: 'game_type' });
+        self.gameModIdentifiers = ko.observable().extend({ session: 'game_mod_identifiers' });
+        self.serverType = ko.observable().extend({ session: 'game_server_type' });
+        self.serverSetup = ko.observable().extend({ session: 'game_server_setup' });
+
+        self.gameModIdentifiers(undefined);
+        self.gameType('Galactic War');
 
         self.devMode = ko.observable().extend({ session: 'dev_mode' });
         self.mode = ko.observable(game.mode());
@@ -962,7 +975,7 @@ requireGW([
             });
         });
 
-        self.battleConfig = ko.observable('').extend({ memory: 'gw_battle_config' });
+        self.battleConfig = ko.observable().extend({ memory: 'gw_battle_config' });
 
         self.currentStar = ko.computed(function() {
             return game.galaxy().stars()[game.currentStar()];
@@ -1287,7 +1300,7 @@ requireGW([
                 });
 
                 referee.stripSystems();
-                referee.mountFiles();
+                referee.mountFiles().always(function() {
                 referee.tagGame();
 
                 self.battleConfig(referee.config());
@@ -1310,11 +1323,17 @@ requireGW([
                     content: game.content(),
                 };
 
-                if (self.useLocalServer())
+                if (self.useLocalServer()) {
+                    self.serverType('local');
                     params['local'] = true;
+                }
+                else {
+                    self.serverType('uber');
+                }
 
                 var connect = function () {
                     api.debug.log('start gw: ok');
+                    self.serverSetup('game');
                     window.location.href = 'coui://ui/main/game/connect_to_game/connect_to_game.html?' + $.param(params);
                 }
 
@@ -1325,6 +1344,8 @@ requireGW([
                         if (_.has(replays, game.replayName())) {
                             var paths = replays[game.replayName()];
                             api.debug.log('local gw loadsave: ok', game.replayName(), paths);
+                            self.serverSetup('loadsave');
+                            self.serverType('uber');
                             params['mode'] = 'loadsave'
                             params['loadpath'] = paths.replay;
                         } else {
@@ -1337,10 +1358,12 @@ requireGW([
                 }
                 else {
                     api.debug.log('remote gw loadsave: ok');
+                    self.serverSetup('loadsave');
                     params['mode'] = 'loadsave'
                     params['replayid'] = game.replayLobbyId();
                     connect();
                 }
+                });
             });
         };
 

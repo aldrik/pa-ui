@@ -27,35 +27,44 @@ function stringfy(object) {
 }
 
 function loadHtml(src) {
+    var start = Date.now();
     var xmlhttp = new XMLHttpRequest();
     try {
         xmlhttp.open("GET", src, false);
         xmlhttp.send();
     } catch (err) {
-        console.log("error loading " + src);
+        console.error("error loading " + src + ' ' + err.message + " after " +  (Date.now() - start)/1000 + " seconds" );
         return;
     }
-
+    console.log( src + ' loaded in ' + (Date.now() - start)/1000 + " seconds" );
     return xmlhttp.responseText;
 }
 
 function loadScript(src) {
+    var start = Date.now();
     var o = new XMLHttpRequest();
     try {
         o.open('GET', src, false);
         o.send('');
     } catch (err) {
-        console.log("error loading " + src);
+        console.error("error loading " + src + " after " +  (Date.now() - start)/1000 + " seconds");
         return false;
     }
     if (o.status > 200) {
-        console.log('Failed loading', src, 'Status', o.status);
+        console.error('Failed loading ' + src + ' with ' + o.status + " after " +  (Date.now() - start)/1000 + " seconds");
         return false;
     }
-    var se = document.createElement('script');
-    se.type = "text/javascript";
-    se.text = o.responseText;
-    document.getElementsByTagName('head')[0].appendChild(se);
+    try {
+        var se = document.createElement('script');
+        se.type = "text/javascript";
+        se.text = o.responseText;
+        document.getElementsByTagName('head')[0].appendChild(se);
+    } catch (err) {
+        console.error(err);
+        console.error("error loading " + src + " after " +  (Date.now() - start)/1000 + " seconds");
+        return false;
+    }
+    console.log( src + ' loaded in ' + (Date.now() - start)/1000 + " seconds" );
     return true;
 }
 
@@ -73,6 +82,7 @@ function loadSceneMods(scene) {
 }
 
 function loadMods(list) {
+    var start = Date.now();
     var i;
     var mod;
     var type;
@@ -92,6 +102,7 @@ function loadMods(list) {
         if (mod.match(css))
             loadCSS(mod);
     }
+    console.log( 'mods loaded in ' + (Date.now() - start)/1000 + " seconds" );
 }
 
 // Adds String.endsWith()
@@ -350,21 +361,27 @@ var onUbernetLogin;
     ko.extenders.ubernet = function(target, option) {
         var base_key = option,
             ubernet_key = 'uberData.' + base_key,
-            previous = '';
+            previous = {},
+            timeout;
 
         var updateUbernetData = function(data) {
 
+            timeout = undefined;
+            
             if (_.isUndefined(data) || _.isNull(data))
                 return;
 
-            var payload = {};
-            payload[ubernet_key] = data;
+            var payload = { Data:{} };
+            payload.Data[ubernet_key] = data;
 
             var payload_string = JSON.stringify(payload);
 
-            if (payload_string !== previous)
-                engine.asyncCall("ubernet.updateUserCustomData", JSON.stringify(payload)).done(function(data) {
-                    previous = payload_string;
+            if (payload_string === previous[ubernet_key]) {
+                return;
+            }
+
+            api.net.ubernet('/GameClient/UpdateUserCustomData', 'POST', 'text', payload).done(function(data) {
+                    previous[ubernet_key] = payload_string;
                 }).fail(function(error) {
                     console.log(error);
                     console.log('failed to save ubernet data: ' + base_key);
@@ -374,23 +391,38 @@ var onUbernetLogin;
             /* fallback to localstorage */
         };
 
+// limit updates to once per second
         target.subscribe(function(value) {
-            updateUbernetData(value);
+            if (timeout) {
+                clearTimeout(timeout);
+            }
+            timeout = setTimeout( updateUbernetData, 1000, value );
         });
 
         target.refresh = function() {
-            engine.asyncCall("ubernet.getUserCustomData", JSON.stringify([ubernet_key])).done(function(data) {
-                var result;
+            var request = api.net.ubernet('/GameClient/getUserCustomData', 'GET', 'text', JSON.stringify([ubernet_key])).done(function(data) {
                 try {
-                    if (data)
-                        result = JSON.parse(data).Data[ubernet_key];
+                    var result = JSON.parse(data).Data[ubernet_key];
 
-                    if (_.isUndefined(result) || _.isNull(result))/* fallback to localstorage */
+                    var invalid = _.isUndefined( result ) || _.isNull( result );
+
+                    if (invalid)/* fallback to localstorage */
                         result = decode(localStorage[base_key]);
 
-                    if (!_.isUndefined(result) && !_.isNull(result)) {
-                        updateUbernetData(result);
-                        /* replicate local data to PlayFab */
+// no valid data
+                    if ( _.isUndefined(result) || _.isNull(result)) {
+                        throw ( 'no ubernet data' );
+                    }
+                    else {
+                        if (invalid) {
+                            /* replicate local data to PlayFab */
+                            updateUbernetData(result);
+                        }
+                        else {
+                            var payload = { Data: {} };
+                            payload.Data[ ubernet_key ] = result;
+                            previous[ ubernet_key ] = JSON.stringify( payload );
+                        }
                         target(result);
                     }
 
@@ -408,6 +440,8 @@ var onUbernetLogin;
                     target(result);
                 }
             });
+            
+            return request;
         };
 
         if (!logged_in)
@@ -451,6 +485,7 @@ app.registerWithCoherent = function(model, handlers) {
         var params = {
             action: 'start',
             content: api.content.activeContent(),
+            mode: 'Config'
         };
 
         if (useLocalServer())
@@ -461,34 +496,32 @@ app.registerWithCoherent = function(model, handlers) {
 
     globalHandlers.join_lobby = function(payload) {
 
+console.log( 'join_lobby' );
+console.log( JSON.stringify( payload ));
+
         /* Since this is a global handler we can't make any assumptions about the model.
          This sets up the persistance channels that would normally belong in the model. */
-        var gameHostname = ko.observable().extend({
-            session : 'gameHostname'
-        });
-        var gamePort = ko.observable().extend({
-            session : 'gamePort'
-        });
-        var joinLocalServer = ko.observable().extend({
-            session : 'join_local_server'
-        });
-        var joinCustomServer = ko.observable().extend({
-            session : 'join_custom_server'
-        });
-        var lobbyId = ko.observable().extend({
-            session : 'lobbyId'
-        });
+        var gameHostname = ko.observable().extend({ session : 'gameHostname' });
+        var gamePort = ko.observable().extend({ session : 'gamePort' });
+        var isLocalGame = ko.observable().extend({ session: 'is_local_game' });
+        var lobbyId = ko.observable().extend({ session : 'lobbyId' });
+        var gameTicket = ko.observable().extend({ session: 'gameTicket' });
+        var invite_uuid = ko.observable().extend({ session : 'invite_uuid' });
+        var serverType = ko.observable().extend({ session: 'game_server_type' });
+        var serverSetup = ko.observable().extend({ session: 'game_server_setup' });
+        var gameType = ko.observable().extend({ session: 'game_type' });
+
+        var gameModIdentifiers = ko.observable().extend({ session: 'game_mod_identifiers' });
 
         lobbyId(payload.lobby_id);
         gameHostname(payload.game_hostname);
         gamePort(payload.game_port);
-        joinLocalServer(payload.local_game);
-        joinCustomServer(payload.custom_server);
-
-        var invite_uuid = ko.observable().extend({
-            session : 'invite_uuid'
-        });
+        isLocalGame(payload.local_game);
+        serverType(payload.type);
+        serverSetup(payload.setup);
+        gameType(payload.type);
         invite_uuid(payload.uuid);
+        gameModIdentifiers(payload.mods);
 
         window.location.href = 'coui://ui/main/game/connect_to_game/connect_to_game.html?content=' + payload.content;
     }
