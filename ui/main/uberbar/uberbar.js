@@ -10,9 +10,19 @@ $(document).ready(function () {
         self.uberId = ko.observable(id);
         self.displayName = LeaderboardUtility.getPlayerDisplayName(id);
 
+// requestUserName is required by update_display_name
+        self.requestUserName = function() {
+            LeaderboardUtility.getPlayerDisplayName(id).subscribe(function(displayName) {
+                self.displayName(displayName);
+            });
+        }
+
         self.pendingChat = ko.observable(false);
 
-        self.tags = ko.observable({});
+        self.tags = ko.computed( function() {
+            return model.userTagMap()[id] || {};
+        });
+        
         self.tagList = ko.computed(function () {
             var result = [];
 
@@ -23,12 +33,6 @@ $(document).ready(function () {
 
             return result;
         });
-
-        function updateTags() {
-            var result = model.userTagMap()[id];
-            self.tags(result ? result : {});
-        }
-        updateTags();
 
         self.friend = ko.computed(function () { return self.tags()['FRIEND'] });
         self.pendingFriend = ko.computed(function () { return self.tags()['PENDING_FRIEND'] });
@@ -57,7 +61,24 @@ $(document).ready(function () {
             var s = model.idToJabberPresenceStatusMap()[self.uberId()];
             return (s && s !== 'undefined') ? s : '';
         });
+        
         self.online = ko.computed(function () { return !self.offline() });
+
+        self.canStartChat = ko.computed(function() { return self.friend() && self.online() });
+        self.canSendFriendRequest = ko.computed(function() { return !self.friend() && !self.blocked() });
+        self.canInviteToChat = ko.computed(function() { return !self.friend() && !self.blocked() });
+
+        self.hasPendingInvite = ko.computed(function() {
+            return model.hasSentInviteTo(self.uberId());
+        });
+
+        self.isLobbyContact = ko.computed(function() {
+            return model.isLobbyContact(self.uberId());
+        });
+
+        self.canInviteToGame = ko.computed(function() {
+            return model.hasLobbyInfo() && ! self.hasPendingInvite() && ! self.isLobbyContact();
+        });
 
         self.startChat = function () {
             var exists = model.conversationMap()[self.uberId()];
@@ -131,22 +152,17 @@ $(document).ready(function () {
             self.unfriend();
             jabber.sendCommand(self.uberId(), 'unfriend');
         }
-
+// selected invite to game on context menu
         self.sendInviteToGame = function () {
-            jabber.sendCommand(self.uberId(), 'game_invite');
-
-            model.pendingGameInvites()[self.uberId()] = model.lobbyInfo() ? model.lobbyInfo().lobby_id : false;
-
-            if (!model.lobbyInfo())
-                api.Panel.message('game', 'create_lobby');
+            model.sendInviteToGame(self.uberId());
         }
-
+// clicked accept on game invite notification
         self.acceptInviteToGame = function () {
-            model.acceptedGameInviteFrom(self.uberId());
-            jabber.sendCommand(self.uberId(), 'accept_game_invite');
+            model.acceptInviteToGame(self.uberId());
         }
+// clicked ignore on game invite notification
         self.declineInviteToGame = function () {
-            jabber.sendCommand(self.uberId(), 'decline_game_invite');
+            model.declineInviteToGame(self.uberId());
         }
 
         self.viewProfile = function () { }
@@ -157,20 +173,17 @@ $(document).ready(function () {
         self.remove = function () {
             self.sendUnfriend();
             model.removeAllUserTagsFor(self.uberId());
-            updateTags();
             _.defer(model.requestUbernetUsers);
         }
 
         self.addTag = function (tag, callback) {
             model.addUserTags(self.uberId(), [tag]);
-            updateTags();
             if (callback)
                 callback();
         }
 
         self.removeTag = function (tag, callback) {
             model.removeUserTags(self.uberId(), [tag]);
-            updateTags();
             if (callback)
                 callback();
         }
@@ -234,6 +247,13 @@ $(document).ready(function () {
     function NotificationViewModel(options /* uberid type */) {
         var self = this;
 
+        self.lobbyInfo = ko.observable(options.lobbyInfo);
+        self.hasLobbyInfo = ko.computed(function() {
+           return !!self.lobbyInfo(); 
+        });
+
+        self.lobbyStatus = ko.observable(options.lobbyStatus || '');
+
         self.isNew = ko.observable(true);
 
         self.type = ko.observable(options.type);
@@ -262,8 +282,13 @@ $(document).ready(function () {
             if (self.partner()) {
                 if (self.isFriendRequest())
                     self.partner().acceptFriendRequest();
-                if (self.isGameInvite())
+                if (self.isGameInvite()) {
                     self.partner().acceptInviteToGame();
+                    
+                    if (self.hasLobbyInfo()) {
+                        model.maybeJoinGameLobby(self.lobbyInfo());                        
+                    }
+                }
                 if (self.isChatInvite())
                     self.partner().acceptChatInvite();
             }
@@ -343,16 +368,17 @@ $(document).ready(function () {
 
         self.userTagMap = ko.observable({ /* id: { tag ... tag } */ }).extend({ ubernet: 'user_tag_map' });
 
-        self.changeUserTags = function (id, tags /* [ tag ... tag ] */, add) {
+        self.changeUserTags = function (uberid, tags /* [ tag ... tag ] */, add) {
             var map = self.userTagMap();
-            var current = map[id] || {};
+            var current = map[uberid] || {};
 
             _.forEach(tags, function (element) {
                 current[element] = !!add;
             });
 
-            map[id] = current;
-            self.userTagMap(map);
+            map[uberid] = current;
+            self.userTagMap.valueHasMutated();
+            self.updateInteractionTimeMap(uberid);
         }
 
         self.addUserTags = function (id, tags /* [ tag ... tag ] */) {
@@ -366,7 +392,7 @@ $(document).ready(function () {
         self.removeAllUserTagsFor = function (id) {
             var map = self.userTagMap();
             delete map[id];
-            self.userTagMap(map);
+            self.userTagMap.valueHasMutated();
         }
 
         self.usersSortedByLastInteractionTime = ko.computed(function () {
@@ -396,6 +422,11 @@ $(document).ready(function () {
         self.idToJabberPresenceStatusMap = ko.observable({}).extend({ session: 'jabber_presence_status_map' });
 
         self.idToInteractionTimeMap = ko.observable({}).extend({ local: 'interaction_time_map' });
+
+        self.updateInteractionTimeMap = function(uberid) {
+            self.idToInteractionTimeMap()[uberid] = _.now();
+            self.idToInteractionTimeMap.valueHasMutated();
+        }
 
         self.friends = ko.computed(function () {
             return _.filter(self.usersSortedAlphabetically(),
@@ -466,16 +497,30 @@ $(document).ready(function () {
                     'message': message
                 });
 
-            self.conversationMap.notifySubscribers();
+            self.conversationMap.valueHasMutated();
         };
 
         self.endConversationsWith = function (uberid) {
             delete self.conversationMap()[uberid];
-            self.conversationMap.notifySubscribers();
+            self.conversationMap.valueHasMutated();
         };
 
         self.notifications = ko.observableArray([]);
         self.notificationCount = ko.computed(function () { return self.notifications().length });
+
+        self.notiticationsMap = ko.computed(function() {
+            var result = {};
+            _.forEach( self.notifications(), function(notification) {
+                var partnerUberId = notification.partnerUberId();
+                var map = result[partnerUberId];
+                if (!map) {
+                    map = {};
+                    result[partnerUberId] = map;
+                }
+                map[notification.type()] = notification;
+            });
+            return result;
+        });
 
         self.newNotifications = ko.computed(function () {
             return _.filter(self.notifications(),
@@ -622,13 +667,22 @@ $(document).ready(function () {
         }
 
         self.saveSearch = function (ubername, uberid) {
-            self.addContact(ubername, uberid, ['SEARCH']);
+
+// check if contact already exists
+            if (self.idToContactMap()[ uberid ]) {
+                self.addUserTags( uberid, ['SEARCH'] );            
+            }
+            else {
+                self.addContact(ubername, uberid, ['SEARCH']);
+            }
         };
 
         self.maybeCreateNewContactWithId = function (uberid) {
-            if (self.idToContactMap()[uberid] || uberid === self.uberId()) {
-                self.idToInteractionTimeMap()[uberid] = _.now();
-                self.idToInteractionTimeMap(self.idToInteractionTimeMap()); /* trigger write to session storage */
+            if (uberid === self.uberId()) {
+                return;
+            }
+            if (self.idToContactMap()[uberid]) {
+                self.updateInteractionTimeMap(uberid);
                 return;
             }
 
@@ -645,15 +699,115 @@ $(document).ready(function () {
             self.notifications.push(new NotificationViewModel({ uberid: uberid, type: command.message_type }));
         }
 
+// send invite to game
+        self.sendInviteToGame = function (uberId) {
+            var lobbyInfo = model.lobbyInfo();
+            if (!lobbyInfo) {
+                return;
+            }
+            jabber.sendCommand(uberId, 'game_invite', { info: lobbyInfo, status: self.lobbyStatus() });
+            self.pendingGameInvites()[uberId] = lobbyInfo;
+            self.pendingGameInvites.valueHasMutated();
+        }
+
+// accept game invite
+        self.acceptInviteToGame = function (uberId) {
+            self.acceptedGameInviteFrom(uberId);
+            jabber.sendCommand(uberId, 'accept_game_invite', {} );
+        }
+
+// decline game invite
+        self.declineInviteToGame = function (uberId) {
+            jabber.sendCommand(uberId, 'decline_game_invite', {} );
+        }
+
+// received game invite
         self.maybeAddGameInvite = function (uberid, command) {
             var contact = self.idToContactMap()[uberid];
 
-            if (contact.blocked() || self.gameInviteMap()[uberid])
+            if (contact.blocked())
                 return;
 
-            self.notifications.push(new NotificationViewModel({ uberid: uberid, type: command.message_type }));
+            var payload = command.payload;
+            var info = undefined;
+            var status = '';
+
+// new invite format
+            if (payload) {
+                info = payload.info;
+                status = payload.status;
+            };
+
+// update or delete any existing invite
+
+            var existing = self.gameInviteMap()[uberid];
+
+            if (existing) {
+                existing.lobbyInfo(info);
+                existing.lobbyStatus(status);
+                return;
+            }
+
+            self.notifications.push(new NotificationViewModel({ uberid: uberid, type: command.message_type, lobbyInfo: info, lobbyStatus: status }));
         }
 
+// received game invite accept
+        self.gameInviteAccepted = function(uberid,command) {
+            if (self.hasSentInviteTo(uberid)) {
+                self.confirmedInvites.push(uberid);
+// old clients do not include a payload and need game_lobby_info sent
+                if (!command.payload) {
+                    var lobbyInfo = model.lobbyInfo();
+                    if (lobbyInfo) {
+                        jabber.sendCommand(uberid, 'game_lobby_info', lobbyInfo);
+                    }
+                }
+                delete self.pendingGameInvites()[uberid];
+                self.pendingGameInvites.valueHasMutated();
+            }            
+        }
+
+// received game invite decline
+        self.gameInviteDeclined = function(uberid,command) {
+            if (self.hasSentInviteTo(uberid)) {
+                delete self.pendingGameInvites()[uberid];          
+                self.pendingGameInvites.valueHasMutated();
+            }
+        }
+
+// received game invite cancelled
+        self.gameInviteCancelled = function(uberid,command) {
+            var notification = self.gameInviteMap()[uberid];
+
+            if (notification) {
+                self.clearNotification(notification);
+                delete self.gameInviteMap()[uberid];        
+            }
+        }
+
+// received game invite update
+        self.updateGameInvite = function(uberid,command) {
+            var existing = self.gameInviteMap()[uberid];
+
+            if (!existing) {
+                return;
+            }
+
+            var lobbyInfo = existing.lobbyInfo();
+            var payload = command.payload;
+
+            if ( _.has( payload, 'password' )) {
+                lobbyInfo.game_password = payload.password;
+            }
+            if ( _.has( payload, 'mods' )) {
+                lobbyInfo.mods = payload.mods;
+            }
+            if ( _.has( payload, 'status' )) {
+                existing.lobbyStatus(payload.status);
+            }
+        }
+
+// received chat invite request
         self.maybeAddChatInvite = function (uberid, command) {
             var contact = self.idToContactMap()[uberid];
 
@@ -663,48 +817,125 @@ $(document).ready(function () {
             self.notifications.push(new NotificationViewModel({ uberid: uberid, type: command.message_type }));
         }
 
-        self.lobbyInfo = ko.observable(/* { game_hostname game_port local_game game_password lobby_id } */);
-        self.lobbyInfo.subscribe(function (new_info) {
-            var lobby_id = new_info ? new_info.lobby_id : false;
+        self.lobbyInfo = ko.observable(/* { game info from connect_to_game login_accepted } */);
+        self.previousLobbyInfo = ko.observable();
 
-            _.forEach(self.pendingGameInvites(), function (value, index, collection) {
-                /* map value will be false if the game invite was sent before we have a lobby id.
-                   so we replace the false value with a real lobby id when we get one. */
-                if (!value)
-                    collection[index] = lobby_id;
+        self.hasLobbyInfo = ko.computed( function() {
+            return !! self.lobbyInfo();
+        })
 
-                /* if we have a lobby id for the invite and we get another lobby id, then the previous invite is no longer valid.
-                   the invalid invite then removed from the map. */
-                if (lobby_id && collection[index] && lobby_id !== collection[index])
-                    delete collection[index];
-            });
-            self.pendingGameInvites.notifySubscribers();
-        });
-        self.lobbyEmptySlots = ko.observable();
-        self.readyToSendLobbyInfo = ko.computed(function () {
-            return (self.lobbyInfo() && self.lobbyEmptySlots());
-        });
-        self.readyToSendLobbyInfo.subscribe(function (value) {
-            if (!value)
+        self.lobbyInfo.subscribe(function (lobbyInfo) {
+            
+            var previousLobbyinfo = self.previousLobbyInfo() ;
+            
+            var previousLobbyId = previousLobbyinfo && previousLobbyinfo.lobbyId || undefined;
+            
+            self.previousLobbyInfo(lobbyInfo);
+
+// exit if lobbyId provided and lobbyId has not changed
+            if ( lobbyInfo && ( previousLobbyId == lobbyInfo.lobbyId ) ) {
                 return;
+            }
 
-            var available = self.lobbyEmptySlots();
-            _.forEach(self.confirmedInvites(), function (element) {
-                if (available) {
-                    jabber.sendCommand(element, 'game_lobby_info', self.lobbyInfo());
-                    available = available - 1;
+// cancel then delete existing game invites
+            _.forEach(self.pendingGameInvites(), function (value, uberId, collection) {
+                 jabber.sendCommand(uberId, 'cancel_game_invite');
+            });
+            self.pendingGameInvites({});
+        });
+
+        self.lobbyEmptySlots = ko.observable();
+
+        self.lobbyStatus = ko.observable('');
+
+        self.lobbyStatus.subscribe(function(lobbyStatus) {
+
+// update existing game invites
+            _.forEach(self.pendingGameInvites(), function (value, uberId, collection) {
+                 jabber.sendCommand(uberId, 'game_invite_update', { status: lobbyStatus });
+            });
+        });
+
+        self.lobbyContacts = ko.observableArray([]);
+
+        self.isLobbyContact = function(uberId) {
+            return self.lobbyContacts().indexOf(uberId) != -1;
+        };
+
+        self.updateLobbyContacts = function(lobbyContacts) {
+
+            self.lobbyContacts(lobbyContacts);
+
+            _.forEach(lobbyContacts, function(uberId) {
+                self.maybeCreateNewContactWithId(uberId);
+            });
+
+            var pendingGameInvites = self.pendingGameInvites();
+            var changed = false;
+// delete pending invites if joined
+            _.forEach(lobbyContacts, function(uberId) {
+                var invite = pendingGameInvites[uberId];
+                if (invite) {
+                    delete pendingGameInvites[uberId];
+                    jabber.sendCommand(uberId, 'cancel_game_invite');
+                    changed = true;
                 }
             });
-        });
+
+            if (changed) {
+                self.pendingGameInvites.valueHasMutated();
+            }
+        };
+
+        self.updateLobbyPassword = function(password) {
+
+            var lobbyInfo = model.lobbyInfo();
+            if (!lobbyInfo) {
+                return;
+            }
+            
+            lobbyInfo.game_password = password;
+            model.lobbyInfo.valueHasMutated();
+
+// update existing game invites
+            _.forEach(self.pendingGameInvites(), function (value, uberId, collection) {
+                 jabber.sendCommand(uberId, 'game_invite_update', { password: password });
+            });
+        }
+
+        self.updateLobbyMods = function(mods) {
+
+            var lobbyInfo = model.lobbyInfo();
+            if (!lobbyInfo) {
+                return;
+            }
+            
+            lobbyInfo.mods = mods;
+            model.lobbyInfo.valueHasMutated();
+
+// update existing game invites
+            _.forEach(self.pendingGameInvites(), function (value, uberId, collection) {
+                 jabber.sendCommand(uberId, 'game_invite_update', { mods: mods });
+            });
+        }
 
         self.findUserId = function () {
-            engine.asyncCall('ubernet.call', '/GameClient/UserId?' +  $.param({ UberName: self.contactSearch() }), false)
+            var searchText = model.contactSearch();
+
+// search for display name if uberName not found
+            api.net.ubernet( '/GameClient/UserId?' + $.param({ TitleDisplayName: searchText }), 'GET', 'text')
                     .done(function (data) {
                         var result = JSON.parse(data);
                         self.saveSearch('', result.UberId);
                     })
                     .fail(function (data) {
-                        console.log('ubernet.UserId: fail');
+
+// search for uber name if not found
+                        api.net.ubernet( '/GameClient/UserId?' + $.param({ UberName: searchText }), 'GET', 'text').done( function (data)
+                        {
+                            var result = JSON.parse(data);
+                            self.saveSearch('', result.UberId);
+                        })
                     });
         }
 
@@ -822,10 +1053,49 @@ $(document).ready(function () {
             self.users(results);
         };
 
+        self.optimiseMaps = function() {
+
+            var interaction_time_map = self.idToInteractionTimeMap();
+            
+            var cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+            
+            var optimised = _.transform(self.userTagMap(), function(result, value, key, object) {
+
+                var lastInteraction = interaction_time_map[ key ];
+
+// keep friends, pending friends, chats and any searches or contacts within last 30 days
+
+                if (value.FRIEND || value.PENDING_FRIEND || value.ALLOW_CHAT || ( lastInteraction && lastInteraction > cutoff )) {
+                    result[ key ] = value;
+                }
+
+                return result;
+            }, {});
+
+            self.userTagMap( optimised );
+
+            var optimised = _.transform(interaction_time_map, function(result, value, key, value) {
+
+                var lastInteraction = interaction_time_map[ key ];
+
+// keep friends, pending friends, chats and any searches or contacts within last 30 days
+
+                if (value > cutoff) {
+                    result[ key ] = value;
+                }
+
+                return result;
+            }, {});
+
+            self.idToInteractionTimeMap( optimised );
+
+        };
+        
         var hasUserTagMap = false;
         self.userTagMap.subscribe(function (value) {
             if (!hasUserTagMap && _.isObject(value) && !_.isEmpty(value)) {
                 hasUserTagMap = true;
+                self.optimiseMaps();
                 self.requestUbernetUsers();
             }
         });
@@ -833,12 +1103,12 @@ $(document).ready(function () {
         self.onPresence = function (uberid, presence_type, presence_status) {
             if (presence_type && presence_type !== 'undefined') {
                 self.idToJabberPresenceTypeMap()[uberid] = presence_type;
-                self.idToJabberPresenceTypeMap.notifySubscribers();
+                self.idToJabberPresenceTypeMap.valueHasMutated();
             }
 
             if (presence_status && presence_status !== 'undefined') {
                 self.idToJabberPresenceStatusMap()[uberid] = presence_status;
-                self.idToJabberPresenceStatusMap.notifySubscribers();
+                self.idToJabberPresenceStatusMap.valueHasMutated();
             }
         }
 
@@ -850,32 +1120,27 @@ $(document).ready(function () {
             self.startConversationsWith(uberid, message);
         }
 
-        self.onCommand = function (uberid, command) {
-            self.maybeCreateNewContactWithId(uberid)
+        self.onCommand = function (uberId, command) {
+            self.maybeCreateNewContactWithId(uberId)
             var type = command.message_type;
-            var contact = self.idToContactMap()[uberid];
+            var contact = self.idToContactMap()[uberId];
             switch (type) {
                 case 'update_display_name': contact.requestUserName(); break;
-                case 'chat_invite': self.maybeAddChatInvite(uberid, command); break;
+                case 'chat_invite': self.maybeAddChatInvite(uberId, command); break;
                 case 'accept_chat_invite': contact.acceptChatInvite(); break;
                 case 'decline_chat_invite': contact.declineChatInvite(); break;
-                case 'friend_request': self.maybeAddFriendRequest(uberid, command); break;
+                case 'friend_request': self.maybeAddFriendRequest(uberId, command); break;
                 case 'accept_friend_request': contact.acceptFriendRequest(); break;
                 case 'decline_friend_request': contact.declineFriendRequest(); break;
                 case 'unfriend': contact.unfriend(); break;
-                case 'game_invite': self.maybeAddGameInvite(uberid, command); break;
-                case 'accept_game_invite':
-                    if (self.hasSentInviteTo(uberid)){
-                        self.confirmedInvites.push(uberid);
-                        if (self.readyToSendLobbyInfo())
-                            jabber.sendCommand(uberid, 'game_lobby_info', model.lobbyInfo());
-                    }
-                    break;
-                case 'decline_game_invite':
-                    delete model.pendingGameInvites()[uberid];
-                    break;
+                case 'game_invite': self.maybeAddGameInvite(uberId, command); break;
+                case 'cancel_game_invite': self.gameInviteCancelled(uberId, command); break;
+                case 'game_invite_update': self.updateGameInvite(uberId, command); break;
+                case 'accept_game_invite': self.gameInviteAccepted(uberId, command); break;
+                case 'decline_game_invite': self.gameInviteDeclined(uberId, command); break;
                 case 'game_lobby_info':
-                    if (model.acceptedGameInviteFrom() === uberid) {
+// old clients will still send game_lobby_info
+                    if (model.acceptedGameInviteFrom() === uberId) {
                         model.acceptedGameInviteFrom('');
                         self.maybeJoinGameLobby(command.payload);
                     }
@@ -899,14 +1164,14 @@ $(document).ready(function () {
                 menu.hide();
         }
 
-        var missingContent = ko.observable();
+        self.missingContent = ko.observable();
         self.maybeJoinGameLobby = function(payload)
         {
             if (payload && !_.isEmpty(payload.content))
             {
                 if (!api.content.getInfo(payload.content).owned)
                 {
-                    missingContent(payload.content);
+                    self.missingContent(payload.content);
                     $('#buyContent').modal('show');
                     return;
                 }
@@ -914,28 +1179,39 @@ $(document).ready(function () {
             api.Panel.message('game', 'join_lobby', payload);
         }
 
-        self.missingContentDescription = function() {
-            return api.content.getInfo(missingContent()).description;
-        }
+        self.missingContentDescription = ko.computed( function() {
+            return api.content.getInfo(self.missingContent()).description;
+        });
 
         self.buyMissingContent = function() {
-            api.Panel.message('game', 'navigate_to', 'coui://ui/main/game/armory/armory.html?action=buy_content&content=' + missingContent());
+            api.Panel.message('game', 'navigate_to', 'coui://ui/main/game/armory/armory.html?action=buy_content&content=' + self.missingContent());
         };
 
         self.showUserDetails = ko.observable(false);
 
         self.hasJabber = ko.observable(false);
         self.showUberBar = ko.observable(true);
+        
+        self.init = function() {
+            jabber.setPresenceHandler(model.onPresence);
+            jabber.setMsgHandler(model.onMessage);
+            jabber.setCommandHandler(model.onCommand);
+            model.hasJabber(true);
+            onUbernetLogin();
+        };
 
         self.setup = function () {
 
+            $( window ).on('beforeunload', function() {
+                if (jabber && jabber.connected()) {
+                    jabber.disconnect( 'beforeunload' );
+                }
+                return '';
+            });
+
             var restoreJabber = ko.observable().extend({ session: 'restore_jabber' });
             if (restoreJabber()) {
-                jabber.setPresenceHandler(model.onPresence);
-                jabber.setMsgHandler(model.onMessage);
-                jabber.setCommandHandler(model.onCommand);
-                model.requestUbernetUsers();
-                model.hasJabber(true);
+                self.init();
             }
         }
     }
@@ -945,12 +1221,7 @@ $(document).ready(function () {
 
     handlers.jabber_authentication = function (payload) {
         initJabber(payload);
-        jabber.setPresenceHandler(model.onPresence);
-        jabber.setMsgHandler(model.onMessage);
-        jabber.setCommandHandler(model.onCommand);
-        model.hasJabber(true);
-        model.requestUbernetUsers();
-        onUbernetLogin();
+        model.init();
     }
 
     handlers.uberbar_identifiers = function (payload) {
@@ -961,13 +1232,30 @@ $(document).ready(function () {
 
     handlers.lobby_info = function (payload) {
         // allow invites to any server except localhost
-        if ( payload.game_hostname == 'localhost' )
-            payload = false;
-        model.lobbyInfo(payload);
+        if (_.size(payload) == 0 || (payload && payload.game_hostname == 'localhost'))
+            payload = undefined;
+
+// do not tigger changes if identical
+
+        if ( ! _.isEqual(payload, model.lobbyInfo() )) {
+            model.lobbyInfo(payload);
+        }
     }
 
     handlers.lobby_empty_slots = function (payload) {
         model.lobbyEmptySlots(payload.slots);
+    }
+
+    handlers.lobby_status = function (payload) {
+        model.lobbyStatus(payload.status);
+    }
+
+    handlers.lobby_password = function (payload) {
+        model.updateLobbyPassword(payload.password);
+    }
+
+    handlers.lobby_mods = function (payload) {
+        model.updateLobbyMods(payload.mods);
     }
 
     handlers.visible = function (payload) {
@@ -977,7 +1265,7 @@ $(document).ready(function () {
     }
 
     handlers.lobby_contacts = function (payload) {
-        _.forEach(payload, model.maybeCreateNewContactWithId);
+        model.updateLobbyContacts(payload);
     }
 
     handlers.request_friends = function () {

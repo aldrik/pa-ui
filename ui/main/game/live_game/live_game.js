@@ -599,10 +599,19 @@ $(document).ready(function () {
         self.isTeamArmy = ko.computed(function () { return self.game_type() === 'TeamArmies' });
         self.isGalaticWar = ko.computed(function () { return self.game_type() === 'Galactic War' });
         self.isLadder1v1 = ko.computed(function () { return self.game_type() === 'Ladder1v1' });
+
+        if (object && object.game_type) {
+            model.gameType(object.game_type);
+        }
     }
 
     function LiveGameViewModel() {
         var self = this;
+
+        self.isLocalGame = ko.observable().extend({ session: 'is_local_game' });
+        self.serverType = ko.observable().extend({ session: 'game_server_type' });
+        self.serverSetup = ko.observable().extend({ session: 'game_server_setup' });
+        self.gameType = ko.observable().extend({ session: 'game_type' });
 
         self.gameOptions = new GameOptionModel();
 
@@ -1704,6 +1713,7 @@ $(document).ready(function () {
         };
 
         self.abandon = function () {
+            self.resetGameInfo();
             var removeDeferred = $.Deferred();
             $.when(self.haveUberNet() && api.net.removePlayerFromGame()).always(removeDeferred.resolve);
 
@@ -1739,6 +1749,20 @@ $(document).ready(function () {
         }
 
         self.mainMenuUrl = ko.observable('coui://ui/main/game/start/start.html');
+
+        self.navToUrl = function(url) {
+            self.transitPrimaryMessage(loc('!LOC:Returning to Main Menu'));
+            self.transitSecondaryMessage('');
+            self.transitDestination(url);
+            self.transitDelay(0);
+            window.location.href = 'coui://ui/main/game/transit/transit.html';
+            return; /* window.location.href will not stop execution. */
+        }
+        
+        self.navToStart = function() {
+            self.navToUrl(self.mainMenuUrl());
+        }
+
         self.navToMainMenu = function () {
             engine.call('pop_mouse_constraint_flag');
             engine.call("game.allowKeyboard", true);
@@ -1746,7 +1770,7 @@ $(document).ready(function () {
             self.abandon().always(function () {
                 self.userTriggeredDisconnect(true);
                 self.disconnect();
-                window.location.href = self.mainMenuUrl();
+                self.navToStart();
             });
         }
 
@@ -2220,7 +2244,7 @@ $(document).ready(function () {
 
                         self.userTriggeredDisconnect(true);
                         self.disconnect();
-                        window.location.href = self.mainMenuUrl();
+                        self.navToStart();
                     });
                 }
             });
@@ -2249,7 +2273,7 @@ $(document).ready(function () {
                 self.pauseSim();
 
             var text = (self.singleHumanPlayer() ? 'AI Skirmish' : 'Multiplayer Battle')
-                    + ' ' + UberUtility.createDateString();
+                    + ' ' + UberUtility.createDateTimeString();
 
             self.popUp({
                 message: '!LOC:Save Game',
@@ -3470,6 +3494,28 @@ $(document).ready(function () {
                 damage: 1
             },
         };
+
+// update the timestamp in reconnect to game info every minute
+        self.reconnectToGameInfo = ko.observable().extend({ local: 'reconnect_to_game_info' });
+        self.updateReconnectToGameInfoTimestamp = function() {
+            var reconnectToGameInfo = self.reconnectToGameInfo();
+            if (!reconnectToGameInfo) {
+                return;
+            }
+            reconnectToGameInfo.timestamp = Date.now();
+            self.reconnectToGameInfo.valueHasMutated();
+            setTimeout(self.updateReconnectToGameInfoTimestamp, 60*1000);
+        }
+        self.updateReconnectToGameInfoTimestamp();
+
+        self.resetLobbyInfo = function() {
+            api.Panel.message('uberbar', 'lobby_info', undefined);            
+        };
+
+        self.resetGameInfo = function() {
+            self.reconnectToGameInfo(undefined);
+            self.resetLobbyInfo();           
+        };
     }
     model = new LiveGameViewModel();
 
@@ -3506,7 +3552,7 @@ $(document).ready(function () {
             default: {
                 model.gameOver(false);
                 if (msg.url && msg.url !== window.location.href) {
-                    window.location.href = msg.url;
+                    model.navToUrl( msg.url );
                     return;
                 }
                 break;
@@ -3609,6 +3655,9 @@ $(document).ready(function () {
                     break;
 
                 case 'game_over':
+                    if (msg.data.control) {
+                        handlers.control_state(msg.data.control);
+                    }
                     model.showLanding(false);
                     model.showTimeControls(false);
                     model.mode('game_over');
@@ -3920,7 +3969,6 @@ $(document).ready(function () {
             model.reviewMode(false);
     }
     handlers.control_state = function (payload) {
-
         if (!payload.restart && model.restart()) {
             engine.call('watchlist.reset');
             model.setupWatchList();
@@ -3956,12 +4004,14 @@ $(document).ready(function () {
         engine.call('pop_mouse_constraint_flag');
         engine.call("game.allowKeyboard", true);
 
+        model.resetGameInfo();
+
         if (payload.disconnect) {
             var navAway = function() {
                 model.userTriggeredDisconnect(true);
                 model.disconnect();
 
-                window.location.href = payload.url;
+                model.navToUrl( payload.url );
             };
 
             if (model.haveUberNet())
@@ -3970,7 +4020,7 @@ $(document).ready(function () {
                 navAway();
         }
         else
-            window.location.href = payload.url;
+            model.navToUrl( payload.url );
     };
 
     handlers['game_paused.resume'] = model.playSim;
