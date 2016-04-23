@@ -1,4 +1,6 @@
-﻿var model;
+﻿ko.options.deferUpdates = false; // disable deferred updates until I have time to debug recursion issue
+
+var model;
 var handlers;
 
 $(document).ready(function () {

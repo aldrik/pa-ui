@@ -1930,6 +1930,10 @@ $(document).ready(function () {
                 self.selection(payload);
             else
                 self.selection(null);
+
+            // update UI immediately otherwise weird stuff happens
+
+            ko.tasks.runEarly();
         };
 
         self.actionBarState = ko.computed(function() {

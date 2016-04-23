@@ -48,3 +48,5 @@ $(document).ready(function() {
     if (profileAllTheThings)
         _.defer(function() { console.profileEnd(); });
 });
+
+ko.options.deferUpdates = true;
