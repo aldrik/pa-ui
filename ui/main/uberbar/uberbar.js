@@ -1221,7 +1221,7 @@ $(document).ready(function () {
 
     handlers.jabber_authentication = function (payload) {
         initJabber(payload);
-        model.init();
+        _.defer(model.init);
     }
 
     handlers.uberbar_identifiers = function (payload) {
