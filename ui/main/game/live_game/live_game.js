@@ -2521,19 +2521,43 @@ $(document).ready(function () {
         self.startTeamChat = function () {
             self.startOrSendChat();
 
-            // if global spectator chat is enabled and not game over then make spectator chat default to team chat
+            // if game over then enable global chat
 
-            self.teamChat(self.gameOptions.listenToSpectators() && self.isSpectator() && ! self.gameOver() || self.playerInTeam());
+            if (self.gameOver()) {
+                self.teamChat(false);
+                return;
+            }
+
+            if (self.isSpectator()) {
+                self.teamChat(true);
+                return;
+            }
+
+            self.teamChat(self.playerInTeam());
         }
 
         self.startNormalChat = function () {
             self.startOrSendChat();
+
+            // if game over then enable global chat
+
+            if (self.gameOver()) {
+                self.teamChat(false);
+                return;
+            }
+
+            if (self.isSpectator()) {
+                self.teamChat(!self.gameOptions.listenToSpectators());
+                return;
+            }
+
             self.teamChat(false);
         }
 
         self.chatState = ko.computed(function() {
             return {
                 selected: self.chatSelected(),
+                spectator: self.isSpectator() && self.teamChat() && ! self.playerInTeam(),
                 team: self.teamChat()
             };
         });
@@ -3544,6 +3568,8 @@ $(document).ready(function () {
 
     handlers.server_state = function (msg) {
 
+        api.debug.log('server_state ' + msg.state);
+
         switch (msg.state) {
             case 'game_over': {
 
@@ -3564,6 +3590,7 @@ $(document).ready(function () {
         }
 
         if (msg.data) {
+            api.debug.log( JSON.stringify(msg.data));
             model.reviewMode(false);
             model.forceResumeAfterReview(false);
 
