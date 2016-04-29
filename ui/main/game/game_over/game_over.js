@@ -470,7 +470,7 @@ $(document).ready(function () {
                         pending = false;
                         if (stats) {
                             api.debug.log('requestPlayerSummary stats for: ' + self.armyIndex());
-                            api.debug.log(stats);
+                            api.debug.log(JSON.stringify(stats));
                             self.playerStats(stats);
                         }
                         else
