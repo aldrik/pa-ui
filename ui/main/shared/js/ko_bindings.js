@@ -339,7 +339,8 @@
 
             _.forEach(findTextNodes(element), function(node) {
                 var src = node.textContent;
-                var rendered = i18n.functions.applyReplacement(src, domPlaceholders);
+                domPlaceholders.interpolation = {prefix: '__', suffix: '__'};
+                var rendered = i18n.t(src, domPlaceholders);
                 if (src !== rendered)
                 {
                     var newNode = document.createElement('span');

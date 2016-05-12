@@ -1,3 +1,18 @@
+jqueryI18next.init(i18next, $, {
+    compatibilityAPI: 'v1',
+    compatibilityJSON: 'v1',
+    tName: 't', // --> appends $.t = i18next.t
+    i18nName: 'i18n', // --> appends $.i18n = i18next
+    handleName: 'localize', // --> appends $(selector).localize(opts);
+    selectorAttr: 'data-i18n', // selector for translating elements
+    targetAttr: 'i18n-target', // data-() attribute to grab target element to translate (if diffrent then itself)
+    optionsAttr: 'i18n-options', // data-() attribute that contains options, will load/set if useOptionsAttr = true
+    useOptionsAttr: false, // see optionsAttr
+    parseDefaultValueFromContent: true // parses default values from content ele.val or ele.text
+});
+
+window.i18n = i18next;
+
 var reSimple = /\[(\/?)(strong|em)\]/gi;
 var reNoClosing = /\[(br)\]/gi;
 var reStyleOpen = /\[style=([^\]]+)\]/gi;
@@ -24,7 +39,12 @@ function applyStyleCode(str) {
 //   loc(any_non_string) -> any_non_string
 //       any non string is a passthrough. this is usefully for many cases where a ko observable needs loc but may be undefined at some point.
 function loc(inText, inOptionalArgs) {
-    inOptionalArgs = inOptionalArgs || {};
+
+    if (inOptionalArgs) {
+        inOptionalArgs.interpolation = {prefix: '__', suffix: '__'};
+    } else {
+        inOptionalArgs = {};
+    }
 
     if (_.isArray(inText))
     {
@@ -50,7 +70,7 @@ function loc(inText, inOptionalArgs) {
             var remainingText = inText.substring(locTag.length);
             return applyStyleCode(i18n.t(_.trim(remainingText), inOptionalArgs));
         }
-        return applyStyleCode(i18n.functions.applyReplacement(inText, inOptionalArgs || {}));
+        return applyStyleCode(i18n.t(inText, inOptionalArgs || {}));
     } catch (error) {
         return "LOCEXCEPTION!";
     }

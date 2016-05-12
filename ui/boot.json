@@ -1,18 +1,19 @@
 {
     "js": [
         "/ui/main/shared/js/boot_prefix.js",
-        "/ui/main/shared/js/thirdparty/jquery-2.1.4.js",
-        "/ui/main/shared/js/thirdparty/jquery-ui-1.11.4.custom/jquery-ui.js",
-        "/ui/main/shared/js/thirdparty/bootstrap-3.0.3/bootstrap.js",
-		"/ui/main/shared/js/thirdparty/bootstrap-select/bootstrap-select.js",
+        "/ui/main/shared/js/thirdparty/jquery-2.2.3.min.js",
+        "/ui/main/shared/js/thirdparty/jquery-ui-1.11.4.custom/jquery-ui.min.js",
+        "/ui/main/shared/js/thirdparty/bootstrap-3.3.6/bootstrap.min.js",
+		"/ui/main/shared/js/thirdparty/bootstrap-select/bootstrap-select.min.js",
         "/ui/main/shared/js/thirdparty/knockout-3.4.0.min.js",
-        "/ui/main/shared/js/thirdparty/lodash-3.9.3.js",
+        "/ui/main/shared/js/thirdparty/lodash-3.10.1.min.js",
         "/ui/main/shared/js/thirdparty/purl-2.3.1.js",
         "/ui/main/shared/js/thirdparty/mousetrap-custom.js",
         "/ui/main/shared/js/thirdparty/mousetrap-bind-dictionary.min.js",
         "/ui/main/shared/js/thirdparty/mousetrap-controlled-repeat.js",
         "/ui/main/shared/js/thirdparty/mousetrap-modifier-state.js",
-        "/ui/main/shared/js/thirdparty/i18next-1.7.1.js",
+        "/ui/main/shared/js/thirdparty/i18next-3.1.0.min.js",
+        "/ui/main/shared/js/thirdparty/jquery-i18next.min.js",
         "/ui/main/shared/js/thirdparty/seedrandom.2.3.4.js",
         "/ui/main/shared/js/thirdparty/require.js",
         "/ui/main/shared/js/require_contexts.js",
@@ -58,8 +59,8 @@
         "~/ui/mods/ui_mod_list.js",
         "/ui/main/shared/js/boot_suffix.js"
     ], "css": [
-        "/ui/main/shared/js/thirdparty/bootstrap-3.0.3/css/bootstrap.css",
-		"/ui/main/shared/js/thirdparty/bootstrap-select/bootstrap-select.css",
+        "/ui/main/shared/js/thirdparty/bootstrap-3.3.6/css/bootstrap.min.css",
+		"/ui/main/shared/js/thirdparty/bootstrap-select/bootstrap-select.min.css",
         "/ui/main/shared/css/jquery-ui-pa-theme.css",
         "/ui/main/shared/css/browser.css",
         "/ui/main/shared/css/global.css"

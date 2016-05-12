@@ -1445,12 +1445,27 @@ input.btn_back {
     background-color: transparent;
 }
 
-.btn, .btn-default:hover, .btn-default:focus, .btn-default:active, .btn-default.active, .open .dropdown-toggle.btn-default {
+.btn, .btn-default:hover, .btn-default:focus, .btn-default:active, .btn-default.active, .dropdown-toggle.btn-default, .dropdown-toggle.btn-default:hover, .dropdown-toggle.btn-default:focus, .open .dropdown-toggle.btn-default, .open .dropdown-toggle.btn-default:hover, .form-control {
     color: inherit;
     background-color: inherit;
     border-color: inherit;
     font-family: "Sansation Bold";
     border-radius: 0;
+}
+
+.dropdown-menu {
+    font-family:'Sansation Bold';
+    font-size:14px;
+    color: #fff;
+    background: #0b1a1F;
+    box-shadow: inset 0px 0px 20px #1e7aa1;
+    box-shadow: 0px 0px 20px #000;
+    border: 1px solid #1e7aa1;
+    border-radius: 0px;
+    margin:0px;
+    padding:0px;
+    z-index: 2000;
+    text-align: left;
 }
 
 .dropdown-menu > li {
@@ -1501,6 +1516,10 @@ input.btn_back {
     color: #666;
     text-shadow: none;
     pointer-events: none;
+}
+
+.form-control {
+    background-color: inherit;
 }
 
 /*BOOT TABS*/
