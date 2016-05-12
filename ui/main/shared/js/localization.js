@@ -125,7 +125,18 @@ function locInitInternal(localeString) {
         locNamespace = locNamespace.substr(locNamespace.lastIndexOf('/') + 1);
     }
 
-    $.i18n.init({
+    $.i18n.use({
+        type: 'backend',
+        read: function(language, namespace, callback) {
+    console.log( 'read ' + language );
+            var strings = _.get(i18n_data, ['strings', language]);
+            if (!strings) {
+                callback("No data for language " + language, {});
+            } else {
+                callback(null, _.mapValues(strings, function (value) { return value.message; }));
+            }
+        }
+    }).init({
         lng: localeString,
         lowerCaseLng: false,
         customLoad: function(lng, ns, options, loadComplete) {
