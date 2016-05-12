@@ -128,7 +128,6 @@ function locInitInternal(localeString) {
     $.i18n.use({
         type: 'backend',
         read: function(language, namespace, callback) {
-    console.log( 'read ' + language );
             var strings = _.get(i18n_data, ['strings', language]);
             if (!strings) {
                 callback("No data for language " + language, {});
