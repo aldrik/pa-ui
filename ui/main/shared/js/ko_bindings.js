@@ -328,8 +328,12 @@
                 texts = texts || [];
                 for (var child = element.firstChild; child !== null; child = child.nextSibling)
                 {
-                    if (child.nodeType == Node.TEXT_NODE)
-                        texts.push(child);
+                    if (child.nodeType == Node.TEXT_NODE) {
+                        var textContent = _.trim(child.textContent);
+                        if (textContent) {
+                           texts.push(child);
+                        }
+                    }
                     else if (child.nodeType === Node.ELEMENT_NODE)
                         findTextNodes(child, texts);
                 }
