@@ -70,7 +70,7 @@ function loc(inText, inOptionalArgs) {
             var remainingText = inText.substring(locTag.length);
             return applyStyleCode(i18n.t(_.trim(remainingText), inOptionalArgs));
         }
-        return applyStyleCode(i18n.t(inText, inOptionalArgs || {}));
+        return applyStyleCode(inText);
     } catch (error) {
         return "LOCEXCEPTION!";
     }
@@ -80,28 +80,39 @@ var locUpdateDocument = wrapWithTiming('localization.js: locUpdateDocument',  fu
     function locTree(tree)
     {
         $('loc', tree).each(function() {
-            var translated = i18n.t(_.trim($(this).text()));
-            var formatted = applyStyleCode(htmlSpecialChars(translated));
-            $(this).html(formatted);
+            var text = _.trim($(this).text());
+            if(text) {
+                var translated = i18n.t(text);
+                var formatted = applyStyleCode(htmlSpecialChars(translated));
+                $(this).html(formatted);
+            }
         });
 
         $('option', tree).each(function() {
             if (!_.isUndefined($(this).data('noloc')))
                 return;
-            $(this).text(i18n.t(_.trim($(this).text())));
+            var text = _.trim($(this).text());
+            if(text) {
+                $(this).text(i18n.t(text));
+            }
         });
 
         $('input[type=button]', tree).each(function() {
-            if ($(this).attr('noloc'))
+            if ($(this).attr('noloc')) {
                 return;
-            var value = $(this).val();
+            }
+            var value = _.trim($(this).val());
             if (value)
-                $(this).val(i18n.t(_.trim(value)));
+                $(this).val(i18n.t(value));
         });
         $('input[placeholder]', tree).each(function() {
-            if (!_.isUndefined($(this).data('noloc')))
+            if (!_.isUndefined($(this).data('noloc'))) {
                 return;
-            $(this).attr('placeholder', i18n.t(_.trim($(this).attr('placeholder'))));
+            }
+            var placeholder = _.trim($(this).attr('placeholder'));
+            if (placeholder) {
+                $(this).attr('placeholder', i18n.t(placeholder));
+            }
         });
     }
 
@@ -137,15 +148,8 @@ function locInitInternal(localeString) {
         }
     }).init({
         lng: localeString,
+        fallbackLng: 'en-US',
         lowerCaseLng: false,
-        customLoad: function(lng, ns, options, loadComplete) {
-            var strings = _.get(i18n_data, ['strings', lng]);
-            if (!strings)
-                loadComplete("No data for language " + lng, {});
-            else
-                loadComplete(null, _.mapValues(strings, function (value) { return value.message; }));
-        },
-        useLocalStorage: false, /* This option would be cool, but it does not consider that locNamespace could change. */
         debug: false,
         nsseparator: ';;',
         keyseparator: '::',
