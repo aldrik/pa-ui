@@ -29,7 +29,7 @@
 
 @font-face {
     font-family: "Glyphicons Halflings";
-    src: url('coui://ui/main/shared/font/glyphicons-halflings-regular.ttf');
+    src: url('coui://ui/main/shared/js/thirdparty/bootstrap-3.3.6/fonts/glyphicons-halflings-regular.svg#glyphicons_halflingsregular') format('svg'), url('coui://ui/main/shared/js/thirdparty/bootstrap-3.3.6/fonts/glyphicons-halflings-regular.ttf');
 }
 
 @font-face {
@@ -1437,6 +1437,7 @@ input.btn_back {
 
 
 /* Bootstrap modifications */
+
 .table > thead > tr > th, .table > tbody > tr > th, .table > tfoot > tr > th, .table > thead > tr > td, .table > tbody > tr > td, .table > tfoot > tr > td {
     border-top: none;
 }
